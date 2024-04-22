@@ -14,20 +14,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efficientgo/core/testutil"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/store"
-
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/efficientgo/core/testutil"
-	"github.com/pkg/errors"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
+
 	"github.com/thanos-io/thanos/pkg/component"
 	"github.com/thanos-io/thanos/pkg/info/infopb"
+	"github.com/thanos-io/thanos/pkg/store"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 )
@@ -492,6 +491,46 @@ func TestEndpointSetUpdate_EndpointGoingAway(t *testing.T) {
 	testutil.Equals(t, 1, len(endpointSet.GetStoreClients()))
 
 	endpoints.CloseOne(discoveredEndpointAddr[0])
+	endpointSet.Update(context.Background())
+	testutil.Equals(t, 1, len(endpointSet.GetEndpointStatus()))
+	testutil.Equals(t, 0, len(endpointSet.GetStoreClients()))
+}
+
+func TestEndpointSetUpdate_SidecarPrometheusBecomingUnreachable(t *testing.T) {
+	storeInfo := &infopb.InfoResponse{
+		ComponentType: component.Sidecar.String(),
+		Store: &infopb.StoreInfo{
+			MinTime: math.MinInt64,
+			MaxTime: math.MaxInt64,
+		},
+		Exemplars:      &infopb.ExemplarsInfo{},
+		Rules:          &infopb.RulesInfo{},
+		MetricMetadata: &infopb.MetricMetadataInfo{},
+		Targets:        &infopb.TargetsInfo{},
+	}
+	endpoints, err := startTestEndpoints([]testEndpointMeta{
+		{
+			InfoResponse: storeInfo,
+			extlsetFn: func(addr string) []labelpb.ZLabelSet {
+				return labelpb.ZLabelSetsFromPromLabels(
+					labels.FromStrings("addr", addr, "a", "b"),
+				)
+			},
+		},
+	})
+	testutil.Ok(t, err)
+	defer endpoints.Close()
+
+	discoveredEndpointAddr := endpoints.EndpointAddresses()
+	endpointSet := makeEndpointSet(discoveredEndpointAddr, false, time.Now)
+	defer endpointSet.Close()
+
+	// Initial update.
+	endpointSet.Update(context.Background())
+	testutil.Equals(t, 1, len(endpointSet.GetEndpointStatus()))
+	testutil.Equals(t, 1, len(endpointSet.GetStoreClients()))
+
+	storeInfo.Store.PrometheusDown = true
 	endpointSet.Update(context.Background())
 	testutil.Equals(t, 1, len(endpointSet.GetEndpointStatus()))
 	testutil.Equals(t, 0, len(endpointSet.GetStoreClients()))

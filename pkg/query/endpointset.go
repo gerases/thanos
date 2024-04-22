@@ -13,8 +13,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/thanos-io/thanos/pkg/api/query/querypb"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -22,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc"
 
+	"github.com/thanos-io/thanos/pkg/api/query/querypb"
 	"github.com/thanos-io/thanos/pkg/component"
 	"github.com/thanos-io/thanos/pkg/exemplars/exemplarspb"
 	"github.com/thanos-io/thanos/pkg/info/infopb"
@@ -716,7 +715,20 @@ func (er *endpointRef) isQueryable() bool {
 	er.mtx.RLock()
 	defer er.mtx.RUnlock()
 
-	return er.isStrict || er.status.LastError == nil
+	if er.isStrict {
+		return true
+	}
+	if er.status.LastError != nil {
+		return false
+	}
+
+	// Dont query sidecars whose prometheus is known to be unreachable.
+	if er.metadata != nil && er.metadata.ComponentType == component.Sidecar.String() {
+		if er.metadata.Store != nil {
+			return !er.metadata.Store.PrometheusDown
+		}
+	}
+	return true
 }
 
 func (er *endpointRef) ComponentType() component.Component {

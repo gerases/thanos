@@ -291,7 +291,7 @@ func runSidecar(
 						TsdbInfos:                    promStore.TSDBInfos(),
 					}
 				}
-				return nil
+				return &infopb.StoreInfo{PrometheusDown: true}
 			}),
 			info.WithExemplarsInfoFunc(),
 			info.WithRulesInfoFunc(),

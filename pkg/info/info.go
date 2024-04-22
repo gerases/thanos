@@ -6,9 +6,10 @@ package info
 import (
 	"context"
 
+	"google.golang.org/grpc"
+
 	"github.com/thanos-io/thanos/pkg/info/infopb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
-	"google.golang.org/grpc"
 )
 
 // InfoServer implements the corresponding protobuf interface
